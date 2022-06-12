@@ -1,4 +1,2 @@
 aiogram==2.19
 psycopg2==2.9.2
-venv/
-.idea
