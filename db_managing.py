@@ -662,16 +662,16 @@ class BankCardServiceData(ServiceData):
             select_script = '''
                 SELECT full_name, mother_name, marital_status, last_education,
                     indonesian_phone_number, overseas_phone_number,
-                    indonesian_address, overseas_address, email, occupation, 
-                    company_name, company_business_type, company_address, 
+                    indonesian_address, overseas_address, address_email, occupation, 
+                    company_name, business_type_company, address_company, 
                     is_form_complete, passport, is_passport_complete
                 FROM bank_card_service
                 WHERE service_id = %s;'''
             cursor.execute(select_script, (service_id,))
             full_name, mother_name, marital_status, last_education, \
                 indonesian_phone_number, overseas_phone_number, \
-                indonesian_address, overseas_address, email, occupation, \
-                company_name, company_business_type, company_address, \
+                indonesian_address, overseas_address, address_email, occupation, \
+                company_name, business_type_company, address_company, \
                 is_form_complete, passport, is_passport_complete \
                 = cursor.fetchone()
         connection.commit()
@@ -685,11 +685,11 @@ class BankCardServiceData(ServiceData):
         self._overseas_phone_number = overseas_phone_number
         self._indonesian_address = indonesian_address
         self._overseas_address = overseas_address
-        self._email = email
+        self._address_email = address_email
         self._occupation = occupation
         self._company_name = company_name
-        self._company_business_type = company_business_type
-        self._company_address = company_address
+        self._business_type_company = business_type_company
+        self._address_company = address_company
         self._is_form_complete = is_form_complete
         self._passport = passport
         self._is_passport_complete = is_passport_complete
@@ -701,17 +701,17 @@ class BankCardServiceData(ServiceData):
             select_script = '''
                 SELECT full_name, mother_name, marital_status, last_education,
                     indonesian_phone_number, overseas_phone_number,
-                    indonesian_address, overseas_address, email, occupation, 
-                    company_name, company_business_type, company_address
+                    indonesian_address, overseas_address, address_email, occupation, 
+                    company_name, business_type_company, address_company
                 FROM bank_card_service
                 WHERE service_id = %s;'''
             cursor.execute(select_script, (self._service_id,))
             form = dict(zip(('full_name', 'mother_name', 'marital_status',
                              'last_education', 'indonesian_phone_number',
                              'overseas_phone_number', 'indonesian_address',
-                             'overseas_address', 'email', 'occupation',
-                             'company_name', 'company_business_type',
-                             'company_address'),
+                             'overseas_address', 'address_email', 'occupation',
+                             'company_name', 'business_type_company',
+                             'address_company'),
                             cursor.fetchone()))
         connection.commit()
         connection.close()
@@ -853,13 +853,13 @@ class BankCardServiceData(ServiceData):
         connection.close()
 
     # tested
-    def change_email(self, email: str) -> None:
+    def change_address_email(self, address_email: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             update_script = '''UPDATE bank_card_service
-                                SET email = %s
+                                SET address_email = %s
                                 WHERE service_id = %s;'''
-            cursor.execute(update_script, (email, self._service_id,))
+            cursor.execute(update_script, (address_email, self._service_id,))
         connection.commit()
         connection.close()
 
@@ -886,25 +886,25 @@ class BankCardServiceData(ServiceData):
         connection.close()
 
     # tested
-    def change_company_business_type(self, company_business_type: str) -> None:
+    def change_business_type_company(self, business_type_company: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             update_script = '''UPDATE bank_card_service
-                                SET company_business_type = %s
+                                SET business_type_company = %s
                                 WHERE service_id = %s;'''
-            cursor.execute(update_script, (company_business_type,
+            cursor.execute(update_script, (business_type_company,
                                            self._service_id,))
         connection.commit()
         connection.close()
 
     # tested
-    def change_company_address(self, company_address: str) -> None:
+    def change_address_company(self, address_company: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             update_script = '''UPDATE bank_card_service
-                                SET company_address = %s
+                                SET address_company = %s
                                 WHERE service_id = %s;'''
-            cursor.execute(update_script, (company_address, self._service_id,))
+            cursor.execute(update_script, (address_company, self._service_id,))
         connection.commit()
         connection.close()
 
@@ -981,16 +981,16 @@ class BankCardServiceData(ServiceData):
             self.change_indonesian_address(value)
         elif field_name == 'overseas_address':
             self.change_overseas_address(value)
-        elif field_name == 'email':
-            self.change_email(value)
+        elif field_name == 'address_email':
+            self.change_address_email(value)
         elif field_name == 'occupation':
             self.change_occupation(value)
         elif field_name == 'company_name':
             self.change_company_name(value)
-        elif field_name == 'company_business_type':
-            self.change_company_business_type(value)
-        elif field_name == 'company_address':
-            self.change_company_address(value)
+        elif field_name == 'business_type_company':
+            self.change_business_type_company(value)
+        elif field_name == 'address_company':
+            self.change_address_company(value)
         else:
             raise FieldNotFound
 
