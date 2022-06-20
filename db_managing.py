@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 import psycopg2
 from typing import List
 
@@ -193,10 +193,10 @@ class ServiceData:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             select_script = '''
-            SELECT user_tg_id, customer_name, request_date, payment_photo, 
-                    is_paid, service_executor
-            FROM service
-            WHERE service_id = %s;'''
+                SELECT user_tg_id, customer_name, request_date, payment_photo, 
+                        is_paid, service_executor
+                FROM service
+                WHERE service_id = %s;'''
             cursor.execute(select_script, (service_id,))
             user_tg_id, customer_name, \
                 request_date, payment_photo, is_paid, \
@@ -354,6 +354,92 @@ class ServiceData:
             connection.close()
         else:
             raise UserNotFound
+        return service_id
+
+
+# tested
+class MeetingData:
+    def __init__(self, service_id: int):
+        self._service_id = service_id
+
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''
+                SELECT meeting_time, meeting_address
+                FROM meeting
+                WHERE service_id = %s;'''
+            cursor.execute(select_script, (service_id,))
+            time, address = cursor.fetchone()
+        connection.commit()
+        connection.close()
+
+        self._time = time
+        self._address = address
+
+    # tested
+    def get_time(self) -> datetime:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''
+                SELECT meeting_time
+                FROM meeting
+                WHERE service_id = %s;'''
+            cursor.execute(select_script, (self._service_id,))
+            time, = cursor.fetchone()
+        connection.commit()
+        connection.close()
+        return time
+
+    # tested
+    def get_address(self) -> str:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''
+                SELECT meeting_address
+                FROM meeting
+                WHERE service_id = %s;'''
+            cursor.execute(select_script, (self._service_id,))
+            address, = cursor.fetchone()
+        connection.commit()
+        connection.close()
+        return address
+
+    # tested
+    def set_time(self, time: datetime) -> None:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            update_script = '''
+                UPDATE meeting
+                SET meeting_time = %s
+                WHERE service_id = %s;'''
+            cursor.execute(update_script, (time, self._service_id,))
+        connection.commit()
+        connection.close()
+
+    # tested
+    def set_place(self, address: str) -> None:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            update_script = '''
+                UPDATE meeting
+                SET meeting_address = %s
+                WHERE service_id = %s;'''
+            cursor.execute(update_script, (address, self._service_id,))
+        connection.commit()
+        connection.close()
+
+    # tested
+    @staticmethod
+    def new_meeting(service_id: int) -> int:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            insert_script = '''
+                INSERT INTO meeting (service_id)
+                VALUES (%s)
+                ON CONFLICT DO NOTHING;'''
+            cursor.execute(insert_script, (service_id,))
+        connection.commit()
+        connection.close()
         return service_id
 
 

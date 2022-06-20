@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS tg_user, operator, service, driver_license_service,
-    bank_card_service CASCADE;
+    bank_card_service, meeting CASCADE;
 DROP TYPE IF EXISTS section_id;
 
 CREATE TABLE tg_user (
@@ -63,4 +63,10 @@ CREATE TABLE bank_card_service (
     is_form_complete bool NOT NULL DEFAULT FALSE,
     passport varchar(255),
     is_passport_complete bool NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE meeting (
+    service_id int REFERENCES service(service_id) ON DELETE CASCADE UNIQUE,
+    meeting_time timestamptz,
+    meeting_address varchar(255)
 );
