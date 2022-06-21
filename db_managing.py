@@ -726,6 +726,7 @@ class DriverLicenseServiceData(ServiceData):
     def new_service(cls, tg_id: int, customer_name: str,
                     request_date: date) -> int:
         service_id = super().new_service(tg_id, customer_name, request_date)
+        MeetingData.new_meeting(service_id)
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             insert_script = '''INSERT INTO driver_license_service (service_id)
@@ -1085,6 +1086,7 @@ class BankCardServiceData(ServiceData):
     def new_service(cls, tg_id: int, customer_name: str,
                     request_date: date) -> int:
         service_id = super().new_service(tg_id, customer_name, request_date)
+        MeetingData.new_meeting(service_id)
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             insert_script = '''INSERT INTO bank_card_service (service_id)
