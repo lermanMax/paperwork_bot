@@ -27,7 +27,6 @@ class FieldNotFound(Exception):
     pass
 
 
-# tested
 class TgUserData:
     def __init__(self, tg_id: int):
         self._tg_id = tg_id
@@ -44,15 +43,12 @@ class TgUserData:
 
         self._tg_username = select_username
 
-    # tested
     def get_tg_id(self) -> int:
         return self._tg_id
 
-    # tested
     def get_tg_username(self) -> str:
         return self._tg_username
 
-    # tested
     @staticmethod
     def new_tg_user(tg_id, tg_username) -> int:
         connection = psycopg2.connect(**db_config)
@@ -69,7 +65,6 @@ class TgUserData:
         connection.close()
         return tg_id
 
-    # tested
     @staticmethod
     def does_tg_user_exist(tg_id) -> bool:
         connection = psycopg2.connect(**db_config)
@@ -86,7 +81,6 @@ class TgUserData:
         return exists
 
 
-# tested
 class OperatorData:
     def __init__(self, operator_id: int):
         self._operator_id = operator_id
@@ -105,15 +99,12 @@ class OperatorData:
         self._name = name
         self._section = operation_section
 
-    # tested
     def get_tg_id(self) -> int:
         return self._tg_id
 
-    # tested
     def get_name(self) -> str:
         return self._name
 
-    # tested
     def get_section(self) -> str:
         return self._section
 
@@ -138,7 +129,6 @@ class OperatorData:
             raise UserNotFound
         return operator_id
 
-    # tested
     @staticmethod
     def does_operator_exist(operator_id) -> bool:
         connection = psycopg2.connect(**db_config)
@@ -154,7 +144,6 @@ class OperatorData:
         connection.close()
         return exists
 
-    # tested
     @staticmethod
     def delete_operator(operator_id: int) -> int:
         if OperatorData.does_operator_exist(operator_id):
@@ -169,7 +158,6 @@ class OperatorData:
             raise OperatorNotFound
         return operator_id
 
-    # tested
     @staticmethod
     def get_operator_id_list(section) -> List[int]:
         connection = psycopg2.connect(**db_config)
@@ -193,29 +181,20 @@ class ServiceData:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             select_script = '''
-                SELECT user_tg_id, customer_name, request_date, payment_photo, 
-                        is_paid, service_executor
+                SELECT user_tg_id, request_date
                 FROM service
                 WHERE service_id = %s;'''
             cursor.execute(select_script, (service_id,))
-            user_tg_id, customer_name, \
-                request_date, payment_photo, is_paid, \
-                service_executor = cursor.fetchone()
+            user_tg_id, request_date = cursor.fetchone()
         connection.commit()
         connection.close()
 
         self._user_tg_id = user_tg_id
-        self._customer_name = customer_name
         self._request_date = request_date
-        self._payment_photo = payment_photo
-        self._is_paid = is_paid
-        self._service_executor = service_executor
 
-    # tested
     def get_user_tg_id(self) -> int:
         return self._user_tg_id
 
-    # tested
     def get_customer_name(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -229,11 +208,9 @@ class ServiceData:
         connection.close()
         return customer_name
 
-    # tested
     def get_request_date(self) -> date:
         return self._request_date
 
-    # tested
     def get_payment_photo(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -246,7 +223,6 @@ class ServiceData:
         connection.close()
         return payment_photo
 
-    # tested
     def is_paid(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -259,7 +235,6 @@ class ServiceData:
         connection.close()
         return is_paid
 
-    # tested
     def get_service_executor(self) -> int:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -272,7 +247,6 @@ class ServiceData:
         connection.close()
         return service_executor
 
-    # tested
     def update_payment_photo(self, new_payment_photo: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -284,7 +258,6 @@ class ServiceData:
         connection.commit()
         connection.close()
 
-    # tested
     def change_customer_name(self, new_customer_name: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -297,7 +270,6 @@ class ServiceData:
         connection.commit()
         connection.close()
 
-    # tested
     def mark_paid(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -308,7 +280,6 @@ class ServiceData:
         connection.commit()
         connection.close()
 
-    # tested
     def mark_unpaid(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -319,7 +290,6 @@ class ServiceData:
         connection.commit()
         connection.close()
 
-    # tested
     def change_service_executor(self, new_operator_id: int) -> None:
         if OperatorData.does_operator_exist(new_operator_id):
             connection = psycopg2.connect(**db_config)
@@ -335,7 +305,6 @@ class ServiceData:
         else:
             raise OperatorNotFound
 
-    # tested
     @classmethod
     def new_service(cls, tg_id: int, customer_name: str,
                     request_date: date) -> int:
@@ -357,26 +326,10 @@ class ServiceData:
         return service_id
 
 
-# tested
 class MeetingData:
     def __init__(self, service_id: int):
         self._service_id = service_id
 
-        connection = psycopg2.connect(**db_config)
-        with connection.cursor() as cursor:
-            select_script = '''
-                SELECT meeting_time, meeting_address
-                FROM meeting
-                WHERE service_id = %s;'''
-            cursor.execute(select_script, (service_id,))
-            time, address = cursor.fetchone()
-        connection.commit()
-        connection.close()
-
-        self._time = time
-        self._address = address
-
-    # tested
     def get_time(self) -> datetime:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -390,7 +343,6 @@ class MeetingData:
         connection.close()
         return time
 
-    # tested
     def get_address(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -404,7 +356,6 @@ class MeetingData:
         connection.close()
         return address
 
-    # tested
     def set_time(self, time: datetime) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -416,7 +367,6 @@ class MeetingData:
         connection.commit()
         connection.close()
 
-    # tested
     def set_place(self, address: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -428,7 +378,6 @@ class MeetingData:
         connection.commit()
         connection.close()
 
-    # tested
     @staticmethod
     def new_meeting(service_id: int) -> int:
         connection = psycopg2.connect(**db_config)
@@ -443,38 +392,10 @@ class MeetingData:
         return service_id
 
 
-# tested
 class DriverLicenseServiceData(ServiceData):
     def __init__(self, service_id: int):
         super().__init__(service_id)
 
-        connection = psycopg2.connect(**db_config)
-        with connection.cursor() as cursor:
-            select_script = '''
-                SELECT blood_type, height_cm, category_a, category_b,
-                    international, is_form_complete, passport,
-                    is_passport_complete, e_visa, is_visa_complete
-                FROM driver_license_service
-                WHERE service_id = %s;'''
-            cursor.execute(select_script, (service_id,))
-            blood_type, height_cm, category_a, category_b, international, \
-                is_form_complete, passport, is_passport_complete, \
-                e_visa, is_visa_complete = cursor.fetchone()
-        connection.commit()
-        connection.close()
-
-        self._blood_type = blood_type
-        self._height_cm = height_cm
-        self._category_a = category_a
-        self._category_b = category_b
-        self._international = international
-        self._is_form_complete = is_form_complete
-        self._passport = passport
-        self._is_passport_complete = is_passport_complete
-        self._e_visa = e_visa
-        self._is_visa_complete = is_visa_complete
-
-    # tested
     def get_form(self) -> dict:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -493,7 +414,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return form
 
-    # tested
     def is_form_complete(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -507,7 +427,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return is_form_complete
 
-    # tested
     def get_passport(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -521,7 +440,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return passport
 
-    # tested
     def is_passport_complete(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -535,7 +453,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return is_passport_complete
 
-    # tested
     def get_e_visa(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -549,7 +466,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return e_visa
 
-    # tested
     def is_visa_complete(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -563,7 +479,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return is_visa_complete
 
-    # tested
     def change_blood_type(self, blood_type: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -574,7 +489,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_height_cm(self, height_cm: int) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -585,7 +499,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_category_a(self, category_a: bool) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -596,7 +509,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_category_b(self, category_b: bool) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -607,7 +519,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_international(self, international: bool) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -618,7 +529,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_passport(self, passport: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -629,7 +539,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def passport_complete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -640,7 +549,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def passport_incomplete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -651,7 +559,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_e_visa(self, e_visa: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -662,7 +569,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def visa_complete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -673,7 +579,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def visa_incomplete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -684,7 +589,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def form_complete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -695,7 +599,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def form_incomplete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -706,7 +609,6 @@ class DriverLicenseServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def put_data_to_field(self, field_name: str, value: any) -> None:
         if field_name == 'blood_type':
             self.change_blood_type(value)
@@ -721,7 +623,6 @@ class DriverLicenseServiceData(ServiceData):
         else:
             raise FieldNotFound
 
-    # tested
     @classmethod
     def new_service(cls, tg_id: int, customer_name: str,
                     request_date: date) -> int:
@@ -739,57 +640,19 @@ class DriverLicenseServiceData(ServiceData):
         return service_id
 
 
-# tested
 class BankCardServiceData(ServiceData):
     def __init__(self, service_id: int):
         super().__init__(service_id)
 
-        connection = psycopg2.connect(**db_config)
-        with connection.cursor() as cursor:
-            select_script = '''
-                SELECT full_name, mother_name, marital_status, last_education,
-                    indonesian_phone_number, overseas_phone_number,
-                    indonesian_address, overseas_address, address_email, occupation, 
-                    company_name, business_type_company, address_company, 
-                    is_form_complete, passport, is_passport_complete
-                FROM bank_card_service
-                WHERE service_id = %s;'''
-            cursor.execute(select_script, (service_id,))
-            full_name, mother_name, marital_status, last_education, \
-                indonesian_phone_number, overseas_phone_number, \
-                indonesian_address, overseas_address, address_email, occupation, \
-                company_name, business_type_company, address_company, \
-                is_form_complete, passport, is_passport_complete \
-                = cursor.fetchone()
-        connection.commit()
-        connection.close()
-
-        self._full_name = full_name
-        self._mother_name = mother_name
-        self._marital_status = marital_status
-        self._last_education = last_education
-        self._indonesian_phone_number = indonesian_phone_number
-        self._overseas_phone_number = overseas_phone_number
-        self._indonesian_address = indonesian_address
-        self._overseas_address = overseas_address
-        self._address_email = address_email
-        self._occupation = occupation
-        self._company_name = company_name
-        self._business_type_company = business_type_company
-        self._address_company = address_company
-        self._is_form_complete = is_form_complete
-        self._passport = passport
-        self._is_passport_complete = is_passport_complete
-
-    # tested
     def get_form(self) -> dict:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             select_script = '''
                 SELECT full_name, mother_name, marital_status, last_education,
                     indonesian_phone_number, overseas_phone_number,
-                    indonesian_address, overseas_address, address_email, occupation, 
-                    company_name, business_type_company, address_company
+                    indonesian_address, overseas_address, address_email, 
+                    occupation, company_name, business_type_company, 
+                    address_company
                 FROM bank_card_service
                 WHERE service_id = %s;'''
             cursor.execute(select_script, (self._service_id,))
@@ -804,7 +667,6 @@ class BankCardServiceData(ServiceData):
         connection.close()
         return form
 
-    # tested
     def is_form_complete(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -818,7 +680,6 @@ class BankCardServiceData(ServiceData):
         connection.close()
         return is_form_complete
 
-    # tested
     def get_passport(self) -> str:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -832,7 +693,6 @@ class BankCardServiceData(ServiceData):
         connection.close()
         return passport
 
-    # tested
     def is_passport_complete(self) -> bool:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -846,7 +706,6 @@ class BankCardServiceData(ServiceData):
         connection.close()
         return is_passport_complete
 
-    # tested
     def change_full_name(self, full_name: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -857,7 +716,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_mother_name(self, mother_name: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -868,7 +726,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_marital_status(self, marital_status: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -879,7 +736,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_last_education(self, last_education: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -890,7 +746,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_indonesian_phone_number(self,
                                        indonesian_phone_number: str) -> None:
         connection = psycopg2.connect(**db_config)
@@ -903,7 +758,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_overseas_phone_number(self, overseas_phone_number: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -915,7 +769,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_indonesian_address(self, indonesian_address: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -927,7 +780,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_overseas_address(self, overseas_address: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -939,7 +791,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_address_email(self, address_email: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -950,7 +801,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_occupation(self, occupation: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -961,7 +811,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_company_name(self, company_name: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -972,7 +821,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_business_type_company(self, business_type_company: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -984,7 +832,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_address_company(self, address_company: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -995,7 +842,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def form_complete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -1006,7 +852,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def form_incomplete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -1017,7 +862,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def change_passport(self, passport: str) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -1028,7 +872,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def passport_complete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -1039,7 +882,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def passport_incomplete(self) -> None:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
@@ -1050,7 +892,6 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
 
-    # tested
     def put_data_to_field(self, field_name: str, value: any) -> None:
         if field_name == 'full_name':
             self.change_full_name(value)
@@ -1081,7 +922,6 @@ class BankCardServiceData(ServiceData):
         else:
             raise FieldNotFound
 
-    # tested
     @classmethod
     def new_service(cls, tg_id: int, customer_name: str,
                     request_date: date) -> int:
