@@ -99,6 +99,9 @@ class OperatorData:
         self._name = name
         self._section = operation_section
 
+    def get_operator_id(self) -> int:
+        return self._operator_id
+
     def get_tg_id(self) -> int:
         return self._tg_id
 
@@ -159,12 +162,16 @@ class OperatorData:
         return operator_id
 
     @staticmethod
-    def get_operator_id_list(section) -> List[int]:
+    def get_operator_id_list(section: str = None) -> List[int]:
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
-            select_script = '''SELECT operator_id FROM operator
-                                WHERE operation_section = %s;'''
-            cursor.execute(select_script, (section,))
+            if section:
+                select_script = '''SELECT operator_id FROM operator
+                                    WHERE operation_section = %s;'''
+                cursor.execute(select_script, (section,))
+            else:
+                select_script = '''SELECT operator_id FROM operator;'''
+                cursor.execute(select_script)
             try:
                 id_list = cursor.fetchall()
             except TypeError:
