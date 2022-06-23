@@ -11,15 +11,21 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types.message import ContentType
-from enum import Enum
+
+from datetime import datetime
 
 # Import modules of this project
-from config import API_TOKEN, PAYMENT_DETAILS
-from business_logic import PaperworkBot
+from config import ADMINS_TG, API_TOKEN, PAYMENT_DETAILS
+from business_logic import Operator, Service, TgUser, get_next_enum, Section
+from products import BankCardForm, Product, \
+    bank_card_product, driver_license_product, \
+    BankCardService
 from texts_for_replay import start_cmnd_text, help_text, \
-    bank_card_terms_text, driver_license_terms_text, reply_on_random_message, \
-    get_text_for_payment, got_payment_screenshot_text, \
-    bank_card_preparation_text, get_text_for_form_field
+    help_for_admin_text, \
+    reply_on_random_message, waiting_customer_name_text, \
+    get_text_for_payment, got_payment_screenshot_text, got_customer_name_text,\
+    get_text_for_form_field, waiting_pasport_text, pasport_getting_text,\
+    start_form_filling_text, form_is_end_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,9 +38,6 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 # Sructure of callback buttons
 button_cb = callback_data.CallbackData(
     'btn', 'question', 'answer', 'data')
-
-# Initialize business logic
-paperwork_bot = PaperworkBot()
 
 
 #  ------------------------------------------------------------ ВСПОМОГАТЕЛЬНОЕ
@@ -87,16 +90,138 @@ def is_message_private(message: Message) -> bool:
         return False
 
 
+#  ------------------------------------------------------ НАЗНАЧЕНИЕ ОПЕРАТОРОВ
+made_operator = 'made_operator'
+ignor_button = 'IGNOR'
+buttons_for_made_operator = [ignor_button, ] \
+    + [section_member.value for section_member in list(Section)]
+
+
+def get_keyboard_for_made_operator(tg_id: int) -> InlineKeyboardMarkup:
+    keyboard = make_inline_keyboard(
+        question=made_operator,
+        answers=buttons_for_made_operator,
+        data=tg_id
+    )
+    return keyboard
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    commands=['operator'], state="*")
+async def operator_command(message: Message, state: FSMContext):
+    log.info('operator_command from: %r', message.from_user.id)
+    await message.reply(
+        text='Запрос отправлен',
+        reply_markup=ReplyKeyboardRemove()
+    )
+    for admin_id in ADMINS_TG:
+        await bot.send_message(
+            chat_id=admin_id,
+            text=message.from_user.full_name,
+            reply_markup=get_keyboard_for_made_operator(
+                message.from_user.id
+            )
+        )
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=made_operator,
+        answer=buttons_for_made_operator
+    ),
+    state='*')
+async def made_operator_callback_button(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+    section_for_operator = callback_data['answer']
+    if section_for_operator == ignor_button:
+        await query.message.delete()
+        return
+
+    operator_tg_id = callback_data['data']
+    try:
+        Operator.new(
+            tg_id=operator_tg_id,
+            section=Section[section_for_operator],
+            name=query.message.text
+        )
+    except Exception:
+        await query.message.answer('ошибка при назначение')
+        return
+
+    await query.message.edit_text((
+            query.message.text
+            + ' \n'
+            + section_for_operator)
+        )
+
+
+def is_message_from_admin(message: Message):
+    return message.from_user.id in ADMINS_TG
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    lambda message: is_message_from_admin(message),
+    commands=['help'], state="*")
+async def send_help_for_admin(message: Message, state: FSMContext):
+    log.info('send_help_for_admin from: %r', message.from_user.id)
+    await message.answer(
+        text=help_for_admin_text,
+        reply_markup=get_keyboard_services()
+    )
+
+delete_button = 'Удалить'
+
+
+def get_keyboard_for_operator(operator_id: int) -> InlineKeyboardMarkup:
+    keyboard = make_inline_keyboard(
+        question=made_operator,
+        answers=[delete_button, ],
+        data=operator_id
+    )
+    return keyboard
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    lambda message: is_message_from_admin(message),
+    commands=['all_operators'], state="*")
+async def send_all_operators(message: Message, state: FSMContext):
+    log.info('send_all_operators from: %r', message.from_user.id)
+    for operator in Operator.get_operator_list():
+        await message.answer(
+            text=(
+                operator.get_name()
+                + ' - '
+                + operator.get_section().value),
+            reply_markup=get_keyboard_for_operator(operator.get_operator_id())
+        )
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=made_operator,
+        answer=[delete_button, ]),
+    state='*')
+async def delete_operator_callback_button(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+    operator_id = callback_data['data']
+    Operator.delete(operator_id)
+    await query.message.delete()
+
+
 #  -------------------------------------------------------------- ВХОД ТГ ЮЗЕРА
-class Services(Enum):
-    bank_card = 'Оформление карты Permata'
-    driver_license = 'Оформление водительских прав'
-
-
 def get_keyboard_services() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    for button in Services:
-        keyboard.add(KeyboardButton(button.value))
+    for product_name in Product.get_all_product_names():
+        keyboard.add(KeyboardButton(text=product_name))
     return keyboard
 
 
@@ -106,7 +231,7 @@ def get_keyboard_services() -> ReplyKeyboardMarkup:
 async def start_command(message: Message, state: FSMContext):
     log.info('start command from: %r', message.from_user.id)
 
-    paperwork_bot.add_tg_user(
+    TgUser.new(
         tg_id=message.from_user.id,
         tg_username=message.from_user.username
     )
@@ -128,40 +253,16 @@ async def send_help(message: Message, state: FSMContext):
 
 #  ----------------------------------------------------------- ОФОРМЛЕНИЕ УСЛУГ
 class CustomerState(StatesGroup):
+    waiting_for_customer_name = State()
     waiting_for_payment_photo = State()
 
 
 start_service_button = 'Начать оформление'
 
-form_for_bank_card = 'Анкета для Банка'
-pasport_for_bank_card = 'Фото паспорта'
 
-
-async def send_reply_for_bank_card_button(
-        message: Message, state: FSMContext):
-    log.info('send_reply_for_bank_card_button')
-    keyboard = make_inline_keyboard(
-        question=Services.bank_card.name,
-        answers=[start_service_button, ]
-    )
-    await message.answer(
-        text=bank_card_terms_text,
-        reply_markup=keyboard
-    )
-
-
-async def send_reply_for_driver_license_button(
-        message: Message, state: FSMContext):
-    log.info('send_reply_for_driver_license_button')
-    await message.answer(
-        text=driver_license_terms_text,
-        reply_markup=get_keyboard_services()
-    )
-
-
-def is_message_service_button(message: Message) -> bool:
-    """Сообщение это кнопка из клавиатуры сервисов"""
-    if message.text in [button.value for button in Services]:
+def is_message_product_button(message: Message) -> bool:
+    """Сообщение это кнопка из клавиатуры сервисов?"""
+    if message.text in Product.get_all_product_names():
         return True
     else:
         return False
@@ -169,22 +270,26 @@ def is_message_service_button(message: Message) -> bool:
 
 @dp.message_handler(
     lambda message: is_message_private(message),
-    lambda message: is_message_service_button(message),
+    lambda message: is_message_product_button(message),
     content_types=[ContentType.TEXT],
     state='*')
-async def new_text_message(message: Message, state: FSMContext):
+async def replay_for_product_button(message: Message, state: FSMContext):
     log.info('new_text_message from: %r', message.from_user.id)
 
-    if message.text in [button.value for button in Services]:
-        if message.text == Services.bank_card.value:
-            await send_reply_for_bank_card_button(message, state)
-        elif message.text == Services.driver_license.value:
-            await send_reply_for_driver_license_button(message, state)
+    product = Product.get_product_by_name(message.text)
+    keyboard = make_inline_keyboard(
+        question=product.uniq_key,
+        answers=[start_service_button, ]
+    )
+    await message.answer(
+        text=product.terms_description,
+        reply_markup=keyboard
+    )
 
 
 @dp.callback_query_handler(
     button_cb.filter(
-        question=[button.name for button in Services],
+        question=Product.get_all_product_keys(),
         answer=[start_service_button, ]
     ),
     state='*')
@@ -196,40 +301,58 @@ async def start_service_callback_button(
 
     await query.message.edit_reply_markup()  # delete inline button
 
-    if callback_data['question'] == Services.bank_card.name:
-        await send_form_for_pay(
-            tg_id=query.from_user.id,
-            service_name=Services.bank_card.value,
-            payment_amount=140,
-            state=state
-        )
-    elif callback_data['question'] == Services.driver_license.name:
-        await send_form_for_pay(
-            tg_id=query.from_user.id,
-            service_name=Services.driver_license.value,
-            payment_amount=140,
-            state=state
-        )
+    product_key = callback_data['question']
+    product = Product.get_product(product_key)
+
+    await CustomerState.waiting_for_customer_name.set()
+    await state.update_data(product_name=product.product_name)
+    await query.message.answer(waiting_customer_name_text)
 
     await query.answer()  # stop circle on button
 
 
+@dp.message_handler(
+    content_types=ContentType.TEXT,
+    state=CustomerState.waiting_for_customer_name)
+async def new_customer_name(message: Message, state: FSMContext):
+    log.info(f'new_customer_name from: { message.from_user.id }')
+    await message.reply(got_customer_name_text)
+
+    state_data = await state.get_data()
+    product_name = state_data['product_name']
+    product = Product.get_product_by_name(product_name)
+
+    Service_Class = product.service_class
+    service = Service_Class.new(
+        tg_id=message.from_user.id,
+        customer_name=message.text,
+        request_data=datetime.today().date()
+    )
+    await state.update_data(service=service)
+
+    await send_form_for_pay(
+        tg_id=message.from_user.id,
+        product_name=product.product_name,
+        payment_amount=product.payment_amount,
+        state=state
+    )
+
+
 async def send_form_for_pay(
         tg_id: int,
-        service_name: str,
+        product_name: str,
         payment_amount: int,
         state: FSMContext):
     log.info('send_form_for_pay')
     await bot.send_message(
         chat_id=tg_id,
         text=get_text_for_payment(
-            service_name=service_name,
+            service_name=product_name,
             payment_amount=payment_amount,
             payment_details=PAYMENT_DETAILS
         )
     )
     await CustomerState.waiting_for_payment_photo.set()
-    await state.update_data(service_name=service_name)
 
 
 @dp.message_handler(
@@ -240,52 +363,53 @@ async def new_payment_photo(message: Message, state: FSMContext):
     await message.reply(got_payment_screenshot_text)
 
     state_data = await state.get_data()
-    service_name = state_data['service_name']
-    if service_name == Services.bank_card.value:
-        await send_actions_for_bank_card(message, state)
-    else:
-        log.error(f'lost state_data from: { message.from_user.id }')
-        await message.answer(reply_on_random_message)
+    product_name = state_data['product_name']
+    product = Product.get_product_by_name(product_name)
+
+    service = state_data['service']
+    service.put_payment_photo(
+        payment_photo=message.photo[0]['file_id']
+    )
+    await send_payment_to_control(service=service)
+
+    await send_actions_for_service(message, product)
 
 
-#  ------------------------------------------------------------ ФОРМА ДЛЯ БАНКА
-class BankFormState(StatesGroup):
-    waiting_full_name = State()
-    waiting_mother_name = State()
-    waiting_marital_status = State()
+async def send_payment_to_control(
+        service: Service):
+    """Отправляет оплату на проверку"""
+    log.info('send_payment_to_control')
+    await bot.send_photo(
+        chat_id=service.get_tg_id(),
+        photo=service.get_payment_photo_id(),
+        caption="check photo"
+    )
 
 
-class BankPasportState(StatesGroup):
-    waiting_pasport = State()
-
-
-state_and_fields = {
-    BankFormState.waiting_full_name.state: BankCardForm.full_name,
-    BankFormState.waiting_mother_name.state: BankCardForm.mother_name,
-    BankFormState.waiting_marital_status.state: BankCardForm.marital_status
-}
-
-
-#  ------------------------------------------------ ОФОРМЛЕНИЕ БАНКОВСКОЙ КАРТЫ
-async def send_actions_for_bank_card(
-        message: Message, state: FSMContext):
+async def send_actions_for_service(
+        message: Message, product: Product):
     """Отправляет кнопки - какие действия нужно совершить для оформления"""
-    log.info('send_reply_for_bank_card_button')
+    log.info('send_actions_for_service')
     keyboard = make_inline_keyboard(
-        question=Services.bank_card.name,
-        answers=[form_for_bank_card, pasport_for_bank_card]
+        question=product.uniq_key,
+        answers=product.get_document_names()
     )
     await message.answer(
-        text=bank_card_preparation_text,
+        text=product.preparation_description,
         reply_markup=keyboard
     )
 
 
+#  ------------------------------------------------ ОФОРМЛЕНИЕ БАНКОВСКОЙ КАРТЫ
+class BankCardState(StatesGroup):
+    waiting_form = State()
+    waiting_pasport = State()
+
+
 @dp.callback_query_handler(
     button_cb.filter(
-        question=Services.bank_card.name,
-        answer=[form_for_bank_card, pasport_for_bank_card]
-    ),
+        question=bank_card_product.uniq_key,
+        answer=bank_card_product.get_document_names()),
     state='*')
 async def callback_button_bank_card(
         query: CallbackQuery,
@@ -293,9 +417,9 @@ async def callback_button_bank_card(
         state: FSMContext):
     log.info('Got this callback data: %r', callback_data)
 
-    if callback_data['answer'] == form_for_bank_card:
+    if callback_data['answer'] == 'Анкета для Банка':
         await start_form_filling(query.message, state)
-    elif callback_data['answer'] == pasport_for_bank_card:
+    elif callback_data['answer'] == 'Фото паспорта':
         await start_pasport_getting(query.message, state)
 
     await query.answer()  # stop circle on button
@@ -303,11 +427,14 @@ async def callback_button_bank_card(
 
 async def start_form_filling(message: Message, state: FSMContext):
     log.info('start_form_filling from: %r', message.from_user.id)
-    await BankFormState.waiting_full_name.set()
     await message.answer(
-        text='Начинаем заполнять анкету'
+        text=start_form_filling_text
     )
-    field = state_and_fields[await state.get_state()].value
+
+    await BankCardState.waiting_form.set()
+    field_enum = BankCardForm.full_name
+    field = field_enum.value
+    await state.update_data(field_enum=field_enum)
     await message.answer(
         text=get_text_for_form_field(
             field_name=field.name_for_human,
@@ -319,23 +446,31 @@ async def start_form_filling(message: Message, state: FSMContext):
 @dp.message_handler(
     lambda message: is_message_private(message),
     content_types=[ContentType.TEXT],
-    state=[st for st in BankFormState.all_states])
-async def form_filling(message: Message, state: FSMContext):
+    state=BankCardState.waiting_form)
+async def bankcard_form_filling(message: Message, state: FSMContext):
     log.info('form_filling from: %r', message.from_user.id)
 
-    field = state_and_fields[await state.get_state()].value
-    print(f'{field.name_in_db}: {message.text}')
+    state_data = await state.get_data()
+    field_enum = state_data['field_enum']
+    service = state_data['service']
 
-    if await state.get_state() == BankFormState.waiting_marital_status.state:
-        await message.answer(
-            text='Анкета заполнена'
-        )
-        await state.finish()
+    field = field_enum.value
+    print(f'{field.name_in_db}: {message.text}')
+    service.put_data_to_field(
+        name_field_in_db=field.name_in_db,
+        value=message.text
+    )
+
+    if field_enum == BankCardForm.address_company:
+        await message.answer(text=form_is_end_text)
+        await state.reset_state(with_data=False)
+        service.form_complete()
+        await send_actions_for_service(message, bank_card_product)
         return
 
-    await BankFormState.next()
-
-    field = state_and_fields[await state.get_state()].value
+    field_enum = get_next_enum(field_enum)
+    field = field_enum.value
+    await state.update_data(field_enum=field_enum)
     await message.answer(
         text=get_text_for_form_field(
             field_name=field.name_for_human,
@@ -346,20 +481,28 @@ async def form_filling(message: Message, state: FSMContext):
 
 async def start_pasport_getting(message: Message, state: FSMContext):
     log.info('start_pasport_getting from: %r', message.from_user.id)
-    await BankFormState.waiting_pasport.set()
+    await BankCardState.waiting_pasport.set()
     await message.answer(
-        text='Пришлите фото паспорта. (любое фото)'
+        text=waiting_pasport_text
     )
 
 
 @dp.message_handler(
     lambda message: is_message_private(message),
     content_types=[ContentType.PHOTO],
-    state=BankFormState.waiting_pasport)
+    state=BankCardState.waiting_pasport)
 async def pasport_getting(message: Message, state: FSMContext):
     log.info('form_filling from: %r', message.from_user.id)
+
+    state_data = await state.get_data()
+    service = state_data['service']
+    service.new_pasport(
+        pasport=message.photo[0]['file_id']
+    )
+    service.passport_complete()
+
     await message.answer(
-        text='Паспорт получен'
+        text=pasport_getting_text
     )
 
 
