@@ -320,7 +320,7 @@ class ServiceData:
             with connection.cursor() as cursor:
                 insert_values = (tg_id, customer_name, request_date)
                 insert_script = '''
-                    INSERT INTO service (user_tg_id, customer_name, 
+                    INSERT INTO service (user_tg_id, customer_name,
                         request_date)
                     VALUES (%s, %s, %s)
                     RETURNING service_id;'''
@@ -331,6 +331,21 @@ class ServiceData:
         else:
             raise UserNotFound
         return service_id
+
+    @classmethod
+    def get_service_id_list(cls, tg_id: int) -> int:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''SELECT service_id FROM service
+                                WHERE user_tg_id = %s;'''
+            cursor.execute(select_script, (tg_id,))
+            try:
+                id_list = cursor.fetchall()
+            except TypeError:
+                id_list = []
+        connection.commit()
+        connection.close()
+        return [id_tuple[0] for id_tuple in id_list]
 
 
 class MeetingData:
@@ -407,7 +422,7 @@ class DriverLicenseServiceData(ServiceData):
         connection = psycopg2.connect(**db_config)
         with connection.cursor() as cursor:
             select_script = '''
-                SELECT blood_type, height_cm, category_a, category_b, 
+                SELECT blood_type, height_cm, category_a, category_b,
                     international
                 FROM driver_license_service
                 WHERE service_id = %s;'''
@@ -646,6 +661,21 @@ class DriverLicenseServiceData(ServiceData):
         connection.close()
         return service_id
 
+    @staticmethod
+    def does_driver_license_service_exist(service_id: int) -> bool:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''
+            SELECT exists(
+                SELECT service_id
+                FROM driver_license_service
+                WHERE service_id = %s);'''
+            cursor.execute(select_script, (service_id,))
+            exists, = cursor.fetchone()
+        connection.commit()
+        connection.close()
+        return exists
+
 
 class BankCardServiceData(ServiceData):
     def __init__(self, service_id: int):
@@ -657,8 +687,8 @@ class BankCardServiceData(ServiceData):
             select_script = '''
                 SELECT full_name, mother_name, marital_status, last_education,
                     indonesian_phone_number, overseas_phone_number,
-                    indonesian_address, overseas_address, address_email, 
-                    occupation, company_name, business_type_company, 
+                    indonesian_address, overseas_address, address_email,
+                    occupation, company_name, business_type_company,
                     address_company
                 FROM bank_card_service
                 WHERE service_id = %s;'''
@@ -944,3 +974,18 @@ class BankCardServiceData(ServiceData):
         connection.commit()
         connection.close()
         return service_id
+
+    @staticmethod
+    def does_bank_card_service_exist(service_id: int) -> bool:
+        connection = psycopg2.connect(**db_config)
+        with connection.cursor() as cursor:
+            select_script = '''
+            SELECT exists(
+                SELECT service_id
+                FROM bank_card_service
+                WHERE service_id = %s);'''
+            cursor.execute(select_script, (service_id,))
+            exists, = cursor.fetchone()
+        connection.commit()
+        connection.close()
+        return exists
