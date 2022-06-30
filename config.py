@@ -6,4 +6,7 @@ DB_USER = "bot"
 DB_PASS = "bot"
 DB_PORT = "5432"
 
+ADMINS_TG = [98244574, ]
+CLIENT_TIMEZONE_NAME = 'Asia/Makassar'
+
 PAYMENT_DETAILS = '1234567'

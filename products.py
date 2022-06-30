@@ -1,10 +1,10 @@
-from typing import Any
+from typing import Any, List
 from enum import Enum
 from datetime import date
 
 from business_logic import Service, Meeting, FormField, Product,\
     Form, Document, Place, FieldType, log
-from db_managing import BankCardServiceData
+from db_managing import BankCardServiceData, DriverLicenseServiceData
 
 
 # -------------------------------------------------------------- BANK CARD
@@ -44,11 +44,13 @@ bank_card_preparation_text = """
 1. Нужно заполнить анкету для Банка
 2. Нужно прислать фото паспорта
 
-Выберете, что вы хотите сделать:
+Выберете, что вы хотите сделать сейчас:
 """
 
 
 class BankCardService(Service, Meeting):
+    product = None  # Product()
+
     @classmethod
     def new(cls, tg_id: int, customer_name: str, request_data: date):
         log.info(f'new BankCardService from: {tg_id}')
@@ -59,9 +61,43 @@ class BankCardService(Service, Meeting):
         )
         return BankCardService(service_id)
 
+    @classmethod
+    def does_service_exist(cls, service_id: int) -> bool:
+        return BankCardServiceData.does_bank_card_service_exist(service_id)
+
+    @classmethod
+    def get_uncompleted_services(cls, tg_id: int) -> List:
+        services = Service.get_service_list(tg_id)
+        result_services = []
+        for service in services:
+            if cls.does_service_exist(service.get_service_id()):
+                if not service.get_executor():
+                    result_services.append(
+                        cls(service_id=service.get_service_id())
+                    )
+        return result_services
+
+    @classmethod
+    def get_service_by_customer_name(
+            cls, tg_id: int, customer_name: str, request_data: date = None):
+        services = cls.get_uncompleted_services(tg_id)
+        for service in services:
+            if service.get_customer_name() == customer_name:
+                return service
+        return cls.new(tg_id, customer_name, request_data)
+
     def __init__(self, service_id: int):
-        super().__init__(service_id)
+        Service.__init__(self, service_id)
+        Meeting.__init__(self, service_id)
         self.bank_card_service_data = BankCardServiceData(service_id)
+
+    def is_service_ready(self) -> bool:
+        if (self.bank_card_service_data.is_paid()
+                and self.bank_card_service_data.is_form_complete()
+                and self.bank_card_service_data.is_passport_complete()):
+            return True
+        else:
+            return False
 
     def put_data_to_field(self, name_field_in_db: str, value: Any) -> None:
         log.info(f'{name_field_in_db}: {value}')
@@ -78,6 +114,9 @@ class BankCardService(Service, Meeting):
         log.info(f'form_complete: {self.service_id}')
         self.bank_card_service_data.form_incomplete()
 
+    def get_form(self) -> dict:
+        return self.bank_card_service_data.get_form()
+
     def new_pasport(self, pasport: str) -> None:
         log.info(f'new_pasport for bankcard service: {pasport}')
         self.bank_card_service_data.change_passport(pasport)
@@ -89,6 +128,9 @@ class BankCardService(Service, Meeting):
     def passport_incomplete(self) -> None:
         log.info(f'passport_complete: {self.service_id}')
         self.bank_card_service_data.passport_incomplete()
+
+    def get_passport(self) -> str:
+        return self.bank_card_service_data.get_passport()
 
 
 bank_card_product = Product(
@@ -120,10 +162,10 @@ class BankCardForm(Enum):
     last_education = FormField(
         bank_form, FieldType.EN_TEXT, 'last_education', 'last education')
     indonesian_phone_number = FormField(
-        bank_form, FieldType.EN_TEXT,
+        bank_form, FieldType.PHONE,
         'indonesian_phone_number', 'indonesian phone number')
     overseas_phone_number = FormField(
-        bank_form, FieldType.EN_TEXT,
+        bank_form, FieldType.PHONE,
         'overseas_phone_number', 'overseas phone number')
     indonesian_adress = FormField(
         bank_form, FieldType.EN_TEXT,
@@ -131,7 +173,7 @@ class BankCardForm(Enum):
     overseas_address = FormField(
         bank_form, FieldType.EN_TEXT, 'overseas_address', 'overseas_address')
     address_email = FormField(
-        bank_form, FieldType.EN_TEXT, 'address_email', 'address email')
+        bank_form, FieldType.EMAIL, 'address_email', 'address email')
     occupation = FormField(
         bank_form, FieldType.EN_TEXT, 'occupation', 'occupation')
     company_name = FormField(
@@ -173,9 +215,16 @@ driver_license_preparation_text = """
 
 
 class DriveLicenseService(Service, Meeting):
+    product = None  # Product()
+
     @classmethod
     def new():
         pass
+
+    @classmethod
+    def does_service_exist(cls, service_id: int) -> bool:
+        r = DriverLicenseServiceData.does_bank_card_service_exist(service_id)
+        return r
 
     def __init__(self):
         self.drive_license_service_data = 0

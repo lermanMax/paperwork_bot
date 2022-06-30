@@ -20,18 +20,22 @@ reply_on_random_message = """
 """
 
 waiting_customer_name_text = """Пришлите имя на кого вы оформляете услугу"""
+customer_name_exist_text = """
+\n(если вы уже начинали оформлять услугу, выберете имя из списка, чтобы продолжить)
+"""
 
-got_customer_name_text = """Записано"""
+
+got_customer_name_text = """Принято"""
 
 
 def get_text_for_payment(
         service_name: str, payment_amount: int, payment_details: str):
     text = (
         'Вы собиратесь оплатить услугу:\n'
-        f'{service_name}\n'
-        f'Сумма к оплате: {payment_amount} USDT\n'
+        f'<b>{service_name}</b>\n'
+        f'Сумма к оплате: <b>{payment_amount}</b> \n'
         f'Реквизиты для оплаты:\n'
-        f'{payment_details}\n'
+        f'<b>{payment_details}</b>\n'
         f'\nИнструкция:\n'
         f'1. Выполните перевод\n'
         f'2. Пришлите скриншот перевода\n'
@@ -45,8 +49,29 @@ got_payment_screenshot_text = """
 Скриншот отправлен администратору. Когда он будет проверен, вам придет подтверждение.
 """
 
+
+def get_text_for_payment_control(
+        product_name: str, payment_amount: int, from_customer: str):
+    text = (
+        'Новая оплата на услугу:\n'
+        f'<b>{product_name}</b>\n'
+        f'Сумма к оплате: {payment_amount} \n'
+        f'Клиент:{from_customer}\n'
+    )
+    return text
+
+
+def get_confirm_payment_text():
+    return 'Администратор подтвердил платеж'
+
+
+def get_cancel_payment_text():
+    return 'Администратор не принял платеж'
+
+
 start_form_filling_text = 'Начинаем заполнять анкету'
 form_is_end_text = 'Анкета заполнена'
+
 
 def get_text_for_form_field(
       field_name: str, field_type_discription: str):
@@ -59,3 +84,46 @@ def get_text_for_form_field(
 
 waiting_pasport_text = 'Пришлите фото паспорта. (любое фото)'
 pasport_getting_text = 'Паспорт получен'
+
+
+def get_text_for_bank_card_operator(from_customer: str, operator: str):
+    text = (
+        'Заказ на банковский счет.\n'
+        f'Клиент: {from_customer}\n'
+        f'Исполнитель: {operator}\n'
+    )
+    return text
+
+
+def get_form_text(title: str, form_dict: dict):
+    text = f'<b>{title}</b>\n\n'
+    for key, value in form_dict.items():
+        text += f'{key}: {value}\n'
+    return text
+
+
+def get_meeting_text(
+        product_name: str,
+        customer_name: str,
+        operator_name: str,
+        place_name: str,
+        data_time: str,
+        place_link: str = None
+        ):
+    if place_link:
+        place_text = f'Место: <a href="{place_link}">{place_name}</a> \n'
+    else:
+        place_text = f'Место: {place_name}\n'
+    text = (
+        '<b>ВСТРЕЧА</b>\n\n'
+        f'Услуга: {product_name}\n'
+        f'Клиент: {customer_name}\n'
+        f'Исполнитель: {operator_name}\n'
+        f'{place_text}'
+        f'Дата и время: {data_time}\n'
+    )
+    return text
+
+
+chose_meeting_place = """\n\n<b>Выберете, какое место встречи?</b>"""
+chose_meeting_time = """\n\n<b>Выберете, какое время встречи?</b>"""

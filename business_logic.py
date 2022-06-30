@@ -5,7 +5,10 @@ from typing import Any, NamedTuple, Tuple, List
 from enum import Enum
 from datetime import date, datetime
 
-from db_managing import OperatorData, ServiceData, TgUserData
+from pytz import timezone
+
+from db_managing import MeetingData, OperatorData, ServiceData, TgUserData
+from config import CLIENT_TIMEZONE_NAME
 
 
 # Configure logging
@@ -80,6 +83,20 @@ class Operator(CacheMixin):
         operators_id = OperatorData.get_operator_id_list(section)
         return (Operator.get(operator_id) for operator_id in operators_id)
 
+    @classmethod
+    def is_user_operator(cls, tg_id: int, section: Section = None) -> bool:
+        operators = cls.get_operator_list(section)
+        operators_id = [operator.get_tg_id() for operator in operators]
+        return tg_id in operators_id
+
+    @classmethod
+    def get_operator(cls, tg_id: int, section: Section) -> Operator:
+        operators = cls.get_operator_list(section)
+        for operator in operators:
+            if operator.get_tg_id() == tg_id:
+                return operator
+
+
     def __init__(self, operator_id: int):
         super(Operator, self).__init__(key=operator_id)
         self.operator_data = OperatorData(operator_id)
@@ -110,13 +127,25 @@ class Service(CacheMixin):
         service_id = 1
         return Service.get(service_id)
 
+    @classmethod
+    def get_service_list(cls, tg_id: int) -> tuple[Service]:
+        service_ids = ServiceData.get_service_id_list(tg_id)
+        return (Service.get(service_id) for service_id in service_ids)
+
     def __init__(self, service_id: int):
         super(Service, self).__init__(key=service_id)
         self.service_id = service_id
         self.service_data = ServiceData(service_id)
 
-    def get_tg_id(self) -> int:
-        return self.service_data.get_user_tg_id()
+    def get_service_id(self) -> int:
+        return self.service_id
+
+    def get_tg_user(self) -> TgUser:
+        tg_id = self.service_data.get_user_tg_id()
+        return TgUser.get(tg_id)
+
+    def get_customer_name(self) -> str:
+        return self.service_data.get_customer_name()
 
     def get_payment_photo_id(self) -> str:
         return self.service_data.get_payment_photo()
@@ -128,19 +157,59 @@ class Service(CacheMixin):
             ))
         self.service_data.update_payment_photo(payment_photo)
 
+    def is_paid(self) -> bool:
+        return self.service_data.is_paid()
+
     def confirm_payment(self) -> None:
         log.info(f'confirm_payment for service: {self.service_id}')
+        self.service_data.mark_paid()
+
+    def cancel_payment(self) -> None:
+        log.info(f'cancel_payment for service: {self.service_id}')
+        self.service_data.mark_unpaid()
+
+    def get_executor(self) -> Operator:
+        operator_id = self.service_data.get_service_executor()
+        if operator_id:
+            return Operator.get(operator_id)
+        else:
+            None
+
+    def get_executor_name(self) -> str:
+        operator = self.get_executor()
+        if operator:
+            return operator.get_name()
+        else:
+            return '---'
 
     def change_executor(self, new_executor: Operator) -> None:
         log.info(f'new operator for service: {self.service_id}')
+        self.service_data.change_service_executor(
+            new_operator_id=new_executor.get_operator_id()
+        )
 
 
 class Meeting():
-    def set_time(time_for_meeting: datetime):
-        log.info(f'set_time: {time_for_meeting}')
+    def __init__(self, service_id: int):
+        self.meeting_data = MeetingData(service_id)
 
-    def set_place(place: Place):
+    def set_time(self, time_for_meeting: datetime):
+        log.info(f'set_time: {time_for_meeting}')
+        self.meeting_data.set_time(time_for_meeting)
+
+    def get_time(self) -> datetime:
+        """return datetime in clien timezone"""
+        time_from_db = self.meeting_data.get_time()
+        return time_from_db.astimezone(timezone(CLIENT_TIMEZONE_NAME))
+
+    def set_place(self, place: Place):
         log.info(f'set_place: {place.name}')
+        self.meeting_data.set_place(
+            address=place.address
+        )
+
+    def get_place_address(self) -> str:
+        return self.meeting_data.get_address()
 
     def get_time_slots():
         pass
@@ -251,7 +320,22 @@ class Product:
 
         self.list_of_places = list_of_places
         self.service_class = service_class
+        service_class.product = self
         self._all_products[uniq_key] = self
 
     def get_document_names(self) -> List[str]:
         return [doc.document_name for doc in self.list_of_documents]
+
+    def find_place(
+            self,
+            place_name: str = None,
+            place_address: str = None) -> Place:
+        if place_name:
+            place = list(filter(
+                lambda place: place.name == place_name,
+                self.list_of_places))[0]
+        elif place_address:
+            place = list(filter(
+                lambda place: place.address == place_address,
+                self.list_of_places))[0]
+        return place
