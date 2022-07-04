@@ -31,11 +31,11 @@ got_customer_name_text = """Принято"""
 def get_text_for_payment(
         service_name: str, payment_amount: int, payment_details: str):
     text = (
-        'Вы собиратесь оплатить услугу:\n'
+        'Оплата услуги:\n'
         f'<b>{service_name}</b>\n'
         f'Сумма к оплате: <b>{payment_amount}</b> \n'
         f'Реквизиты для оплаты:\n'
-        f'<b>{payment_details}</b>\n'
+        f'<code>{payment_details}</code>\n'
         f'\nИнструкция:\n'
         f'1. Выполните перевод\n'
         f'2. Пришлите скриншот перевода\n'
@@ -83,14 +83,38 @@ def get_text_for_form_field(
 
 
 waiting_pasport_text = 'Пришлите фото паспорта. (любое фото)'
-pasport_getting_text = 'Паспорт получен'
+pasport_getting_text = 'Паспорт принят'
+
+waiting_evisa_text = 'Пришлите электронную визу. (любое фото)'
+evisa_getting_text = 'Электронная виза принята'
+
+answer_shoud_be_bool = 'Ответ должен быть Да или Нет'
+documents_is_ready_text = """
+Вы прислали все, что было необходимо. Ваша заявка на услугу отправлена иполнителю. Когда исполнитель назначит день встречи, вам придет уведомление.
+"""
 
 
-def get_text_for_bank_card_operator(from_customer: str, operator: str):
+def get_text_for_new_service(
+        product_name: str,
+        customer_name: str,
+        operator_name: str,
+        place_name: str = None,
+        date_time: str = None
+        ):
+    if place_name:
+        place_text = f'Место: {place_name} \n'
+        date_text = f'Дата и время: --- {date_time[11:]}\n'
+    else:
+        place_text = ''
+        date_text = ''
     text = (
-        'Заказ на банковский счет.\n'
-        f'Клиент: {from_customer}\n'
-        f'Исполнитель: {operator}\n'
+        '<b>ЗАКАЗ</b>\n\n'
+        f'Услуга: {product_name}\n'
+        f'Клиент: {customer_name}\n'
+        f'Исполнитель: {operator_name}\n'
+        f'{place_text}'
+        f'{date_text}'
+
     )
     return text
 
@@ -127,3 +151,6 @@ def get_meeting_text(
 
 chose_meeting_place = """\n\n<b>Выберете, какое место встречи?</b>"""
 chose_meeting_time = """\n\n<b>Выберете, какое время встречи?</b>"""
+chose_meeting_date = """\n\n<b>Выберете, дату встречи?</b>"""
+meeting_date_chosing_operator = """
+\n\n<b>Дату встречи выберет исполнитель</b>"""

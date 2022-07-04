@@ -2,7 +2,7 @@ from typing import Any, List
 from enum import Enum
 from datetime import date
 
-from business_logic import Service, Meeting, FormField, Product,\
+from business_logic import Section, Service, Meeting, FormField, Product,\
     Form, Document, Place, FieldType, log
 from db_managing import BankCardServiceData, DriverLicenseServiceData
 
@@ -49,6 +49,7 @@ bank_card_preparation_text = """
 
 
 class BankCardService(Service, Meeting):
+    """Продуктовый сервис для Банковской карты"""
     product = None  # Product()
 
     @classmethod
@@ -143,10 +144,12 @@ bank_card_product = Product(
         Document('Фото паспорта')],
     preparation_description=bank_card_preparation_text,
     list_of_places=[
-        Place('Банк 1', 'address 1', 'map link 1'),
-        Place('Bank 2', 'address 2', 'map link 2')
+        Place('Банк 1', 'address 1', 'https://goo.gl/maps/JCfYWKhpRfFeShY48'),
+        Place('Банк 2', 'address 2', 'https://goo.gl/maps/JCfYWKhpRfFeShY48'),
+        Place('Bank 3', 'address 3', 'https://goo.gl/maps/JCfYWKhpRfFeShY48')
     ],
-    service_class=BankCardService
+    service_class=BankCardService,
+    operator_section=Section.BANK_CARD
 )
 
 bank_form = Form('bank_card_service_data')
@@ -209,43 +212,120 @@ driver_license_preparation_text = """
 1. Нужно заполнить анкету
 2. Нужно прислать фото паспорта
 3. Нужно прислать электронную визу
+4. Нужно выбрать место и время встречи
 
 Выберете, что вы хотите сделать:
 """
 
 
 class DriveLicenseService(Service, Meeting):
+    """Продуктовый сервис для Прав"""
     product = None  # Product()
 
     @classmethod
-    def new():
-        pass
+    def new(cls, tg_id: int, customer_name: str, request_data: date):
+        log.info(f'new DriveLicenseService from: {tg_id}')
+        service_id = DriverLicenseServiceData.new_service(
+            tg_id=tg_id,
+            customer_name=customer_name,
+            request_date=request_data
+        )
+        return DriveLicenseService(service_id)
 
     @classmethod
     def does_service_exist(cls, service_id: int) -> bool:
-        r = DriverLicenseServiceData.does_bank_card_service_exist(service_id)
-        return r
+        driver_data = DriverLicenseServiceData
+        return driver_data.does_driver_license_service_exist(service_id)
 
-    def __init__(self):
-        self.drive_license_service_data = 0
+    @classmethod
+    def get_uncompleted_services(cls, tg_id: int) -> List:
+        services = Service.get_service_list(tg_id)
+        result_services = []
+        for service in services:
+            if cls.does_service_exist(service.get_service_id()):
+                if not service.get_executor():
+                    result_services.append(
+                        cls(service_id=service.get_service_id())
+                    )
+        return result_services
 
-    def new_data_for_field(self, name_field_in_db: str, value: Any) -> None:
-        print(f'{name_field_in_db}: {value}')
+    @classmethod
+    def get_service_by_customer_name(
+            cls, tg_id: int, customer_name: str, request_data: date = None):
+        services = cls.get_uncompleted_services(tg_id)
+        for service in services:
+            if service.get_customer_name() == customer_name:
+                return service
+        return cls.new(tg_id, customer_name, request_data)
 
-    def change_form_status(self, is_complete: bool) -> None:
-        log.info(f'form status: {is_complete}')
+    def __init__(self, service_id: int):
+        Service.__init__(self, service_id)
+        Meeting.__init__(self, service_id)
+        self.driver_license_data = DriverLicenseServiceData(service_id)
+
+    def is_service_ready(self) -> bool:
+        if (self.driver_license_data.is_paid()
+                and self.driver_license_data.is_form_complete()
+                and self.driver_license_data.is_passport_complete()
+                and self.driver_license_data.is_visa_complete()
+                and self.did_customer_chose_meeting()):
+            return True
+        else:
+            return False
+
+    def put_data_to_field(self, name_field_in_db: str, value: Any) -> None:
+        log.info(f'{name_field_in_db}: {value}')
+        self.driver_license_data.put_data_to_field(
+            field_name=name_field_in_db,
+            value=value
+        )
+
+    def form_complete(self) -> None:
+        log.info(f'form_complete: {self.service_id}')
+        self.driver_license_data.form_complete()
+
+    def form_incomplete(self) -> None:
+        log.info(f'form_complete: {self.service_id}')
+        self.driver_license_data.form_incomplete()
+
+    def get_form(self) -> dict:
+        return self.driver_license_data.get_form()
 
     def new_pasport(self, pasport: str) -> None:
-        log.info(f'new_pasport for bankcard service: {pasport}')
+        log.info(f'new_pasport for driver_license service: {pasport}')
+        self.driver_license_data.change_passport(pasport)
 
-    def change_pasport_status(self, is_complete: bool) -> None:
-        log.info(f'pasport status: {is_complete}')
+    def passport_complete(self) -> None:
+        log.info(f'passport_complete: {self.service_id}')
+        self.driver_license_data.passport_complete()
+
+    def passport_incomplete(self) -> None:
+        log.info(f'passport_complete: {self.service_id}')
+        self.driver_license_data.passport_incomplete()
+
+    def get_passport(self) -> str:
+        return self.driver_license_data.get_passport()
 
     def new_evisa(self, e_visa: str) -> None:
         log.info(f'new_evisa for bankcard service: {e_visa}')
+        self.driver_license_data.change_e_visa(e_visa)
 
-    def change_evisa_status(self, is_complete: bool) -> None:
-        log.info(f'evisa status: {is_complete}')
+    def evisa_complete(self) -> None:
+        log.info(f'evisa_complete: {self.service_id}')
+        self.driver_license_data.visa_complete()
+
+    def evisa_incomplete(self) -> None:
+        log.info(f'evisa_incomplete: {self.service_id}')
+        self.driver_license_data.visa_incomplete()
+
+    def get_evisa(self) -> str:
+        return self.driver_license_data.get_e_visa()
+
+    def did_customer_chose_meeting(self) -> bool:
+        if self.get_place_address():
+            if self.get_time():
+                return True
+        return False
 
 
 driver_license_product = Product(
@@ -254,13 +334,39 @@ driver_license_product = Product(
     payment_amount='140$',
     terms_description=driver_license_terms_text,
     list_of_documents=[
-        Document('Анкета для '),
+        Document('Анкета'),
         Document('Фото паспорта'),
-        Document('Электронная виза')],
+        Document('Электронная виза'),
+        Document('Место встречи')],
     preparation_description=driver_license_preparation_text,
     list_of_places=[
-        Place('Банк 1', 'address 1', 'map link 1'),
-        Place('Bank 2', 'address 2', 'map link 2')
+        Place(
+            'Восток Бали',
+            'Jl. Bhayangkara, Polres Karangasem',
+            'https://maps.app.goo.gl/r3cFvoZdzhy3VX9B7'),
+        Place(
+            'Денпасар',
+            'Jl. Gunung Sanghyang No.110, Padangsambian, Kec. Denpasar Bar.',
+            'https://goo.gl/maps/nk7Km8AsXmucHrJv9')
     ],
-    service_class=DriveLicenseService
+    service_class=DriveLicenseService,
+    operator_section=Section.DRIVER_LICENSE
 )
+
+drive_form = Form('bank_card_service_data')
+
+
+class DriverLicenseForm(Enum):
+    blood_type = FormField(
+        drive_form, FieldType.EN_TEXT, 'blood_type', 'группу крови')
+    height_cm = FormField(
+        drive_form, FieldType.COUNT, 'height_cm', 'рост (cm)')
+    category_a = FormField(
+        drive_form, FieldType.YES_NO, 'category_a',
+        ', вам нужна категория А?')
+    category_b = FormField(
+        drive_form, FieldType.YES_NO, 'category_b',
+        'вам нужна категория B?')
+    international = FormField(
+        drive_form, FieldType.YES_NO, 'international',
+        ', вам нужны международные права?')

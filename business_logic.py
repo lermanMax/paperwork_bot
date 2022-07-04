@@ -200,7 +200,17 @@ class Meeting():
     def get_time(self) -> datetime:
         """return datetime in clien timezone"""
         time_from_db = self.meeting_data.get_time()
-        return time_from_db.astimezone(timezone(CLIENT_TIMEZONE_NAME))
+        if time_from_db:
+            return time_from_db.astimezone(timezone(CLIENT_TIMEZONE_NAME))
+        else:
+            return None
+
+    def get_time_str(self) -> str:
+        meet_time = self.get_time()
+        if meet_time:
+            return meet_time.strftime('%Y-%m-%d | %H:%M')
+        else:
+            return '--- | ---'
 
     def set_place(self, place: Place):
         log.info(f'set_place: {place.name}')
@@ -245,6 +255,7 @@ class FieldType(Enum):
     PHONE = "номер телефона"
     EMAIL = "email адрес"
     DATE = "дата (дд.мм.гггг)"
+    YES_NO = "да или нет"
 
 
 class Form(NamedTuple):
@@ -308,7 +319,8 @@ class Product:
             list_of_documents: List[Document],
             preparation_description: str,
             list_of_places: List[Place],
-            service_class) -> Product:
+            service_class,
+            operator_section: Section) -> Product:
 
         self.product_name = product_name
         self.uniq_key = uniq_key
@@ -321,6 +333,8 @@ class Product:
         self.list_of_places = list_of_places
         self.service_class = service_class
         service_class.product = self
+        self.operator_section = operator_section
+
         self._all_products[uniq_key] = self
 
     def get_document_names(self) -> List[str]:

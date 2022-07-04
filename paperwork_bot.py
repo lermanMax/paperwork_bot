@@ -12,20 +12,22 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types.message import ContentType
 
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from pytz import timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 
 # Import modules of this project
 from config import ADMINS_TG, API_TOKEN, CLIENT_TIMEZONE_NAME, PAYMENT_DETAILS
-from business_logic import Operator, Service, TgUser, get_next_enum, Section
-from products import BankCardForm, DriveLicenseService, Product, \
+from business_logic import FieldType, Operator,\
+    Service, TgUser, get_next_enum, Section
+from products import BankCardForm, DriveLicenseService,\
+    DriverLicenseForm, Product, \
     bank_card_product, driver_license_product, \
     BankCardService
 from texts_for_replay import get_cancel_payment_text, \
     get_confirm_payment_text, get_form_text, get_meeting_text, \
-    get_text_for_bank_card_operator, get_text_for_payment_control, \
+    get_text_for_new_service, get_text_for_payment_control, \
     start_cmnd_text, help_text, \
     help_for_admin_text, \
     reply_on_random_message, waiting_customer_name_text,\
@@ -33,7 +35,9 @@ from texts_for_replay import get_cancel_payment_text, \
     get_text_for_payment, got_payment_screenshot_text, got_customer_name_text,\
     get_text_for_form_field, waiting_pasport_text, pasport_getting_text,\
     start_form_filling_text, form_is_end_text, chose_meeting_place, \
-    chose_meeting_time
+    chose_meeting_time, waiting_evisa_text, evisa_getting_text, \
+    answer_shoud_be_bool, chose_meeting_date, meeting_date_chosing_operator, \
+    documents_is_ready_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -94,12 +98,50 @@ def make_inline_keyboard(
     return keyboard
 
 
+def make_replay_keyboard(answers: typing.List[str]) -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    for answer_text in answers:
+        keyboard.add(KeyboardButton(text=answer_text))
+    return keyboard
+
+
 def is_message_private(message: Message) -> bool:
     """Сообщение из личного чата с ботом?"""
     if message.chat.type == 'private':
         return True
     else:
         return False
+
+
+async def get_file_id_from_message(message: Message) -> str:
+    """ Получить айди фото или документа"""
+    if message.content_type == 'photo':
+        file_id = message.photo[0]['file_id']
+    elif message.content_type == 'document':
+        file_id = message.document.file_id
+    return file_id
+
+
+async def send_document(
+        chat_id: int,
+        file_id: int,
+        caption: str = None,
+        reply_markup=None):
+    """Send document or photo"""
+    try:
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=file_id,
+            caption=caption,
+            reply_markup=reply_markup
+        )
+    except exceptions.TypeOfFileMismatch:
+        await bot.send_document(
+            chat_id=chat_id,
+            document=file_id,
+            caption=caption,
+            reply_markup=reply_markup
+        )
 
 
 #  ------------------------------------------------------ НАЗНАЧЕНИЕ ОПЕРАТОРОВ
@@ -231,7 +273,7 @@ async def delete_operator_callback_button(
 #  -------------------------------------------------------------- ВХОД ТГ ЮЗЕРА
 def get_keyboard_services() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    for product_name in Product.get_all_product_names()[0:1]:  # SHIT !!!!!!!!!
+    for product_name in Product.get_all_product_names():
         keyboard.add(KeyboardButton(text=product_name))
     return keyboard
 
@@ -267,6 +309,14 @@ class CustomerState(StatesGroup):
     waiting_for_customer_name = State()
     waiting_for_payment_photo = State()
 
+
+yes_button = 'Да'
+no_button = 'Нет'
+yes_no_buttons = (yes_button, no_button)
+bool_dict_for_yes_no = {
+    yes_button: True,
+    no_button: False
+}
 
 start_service_button = 'Начать оформление'
 
@@ -367,7 +417,7 @@ async def new_customer_name(message: Message, state: FSMContext):
     await state.update_data(service=service)
 
     if service.is_paid():
-        await send_actions_for_service(message, product)
+        await send_actions_for_service(service)
     else:
         await send_form_for_pay(
             tg_id=message.from_user.id,
@@ -395,22 +445,19 @@ async def send_form_for_pay(
 
 
 @dp.message_handler(
-    content_types=ContentType.PHOTO,
+    content_types=[ContentType.PHOTO, ContentType.DOCUMENT],
     state=CustomerState.waiting_for_payment_photo)
 async def new_payment_photo(message: Message, state: FSMContext):
     log.info(f'new_payment_photo from: { message.from_user.id }')
     await message.reply(got_payment_screenshot_text)
 
     state_data = await state.get_data()
-    product_name = state_data['product_name']
-    product = Product.get_product_by_name(product_name)
-
     service = state_data['service']
-    service.put_payment_photo(
-        payment_photo=message.photo[0]['file_id']
-    )
+
+    file_id = await get_file_id_from_message(message)
+    service.put_payment_photo(payment_photo=file_id)
     await send_payment_to_control(service=service)
-    await send_actions_for_service(message, product)
+    await send_actions_for_service(service=service)
 
 
 async def send_confirm_payment_notification(service: Service):
@@ -427,15 +474,17 @@ async def send_cancel_payment_notification(service: Service):
     )
 
 
-async def send_actions_for_service(
-        message: Message, product: Product):
+async def send_actions_for_service(service: Service):
     """Отправляет кнопки - какие действия нужно совершить для оформления"""
     log.info('send_actions_for_service')
+    product = service.__class__.product
     keyboard = make_inline_keyboard(
         question=product.uniq_key,
-        answers=product.get_document_names()
+        answers=product.get_document_names(),
+        data=service.get_service_id()
     )
-    await message.answer(
+    await bot.send_message(
+        chat_id=service.get_tg_user().get_tg_id(),
         text=product.preparation_description,
         reply_markup=keyboard
     )
@@ -459,7 +508,7 @@ async def callback_button_bank_card(
     log.info('Got this callback data: %r', callback_data)
 
     if callback_data['answer'] == 'Анкета для Банка':
-        await start_form_filling(query.message, state)
+        await start_form_filling_for_bank(query.message, state)
     elif callback_data['answer'] == 'Фото паспорта':
         await start_pasport_getting(query.message, state)
     await query.answer()  # stop circle on button
@@ -472,8 +521,8 @@ async def callback_button_bank_card(
     )
 
 
-async def start_form_filling(message: Message, state: FSMContext):
-    log.info('start_form_filling from: %r', message.from_user.id)
+async def start_form_filling_for_bank(message: Message, state: FSMContext):
+    log.info('start_form_filling_for_bank from: %r', message.from_user.id)
     await message.answer(
         text=start_form_filling_text
     )
@@ -512,8 +561,8 @@ async def bankcard_form_filling(message: Message, state: FSMContext):
         await message.answer(text=form_is_end_text)
         await state.reset_state(with_data=False)
         service.form_complete()
-        await send_actions_for_service(message, bank_card_product)
-        await check_readiness_and_do_next_step(service)
+        if not await check_readiness_and_do_next_step(service):
+            await send_actions_for_service(service)
         return
 
     field_enum = get_next_enum(field_enum)
@@ -537,21 +586,22 @@ async def start_pasport_getting(message: Message, state: FSMContext):
 
 @dp.message_handler(
     lambda message: is_message_private(message),
-    content_types=[ContentType.PHOTO],
+    content_types=[ContentType.PHOTO, ContentType.DOCUMENT],
     state=BankCardState.waiting_pasport)
 async def pasport_getting(message: Message, state: FSMContext):
     log.info('form_filling from: %r', message.from_user.id)
 
     state_data = await state.get_data()
     service = state_data['service']
-    service.new_pasport(
-        pasport=message.photo[0]['file_id']
-    )
+    file_id = await get_file_id_from_message(message)
+    service.new_pasport(pasport=file_id)
     service.passport_complete()
-    await check_readiness_and_do_next_step(service)
-    await message.answer(
+    await message.reply(
         text=pasport_getting_text
     )
+
+    if not await check_readiness_and_do_next_step(service):
+        await send_actions_for_service(service)
 
 
 #  ------------------------------------------------------------ PAYMENT CONTROL
@@ -584,9 +634,9 @@ async def send_payment_to_control(service: Service):
 
     payment_operators = Operator.get_operator_list(Section.PAYMENT_CONTROL)
     for operator in payment_operators:
-        await bot.send_photo(
+        await send_document(
             chat_id=operator.get_tg_id(),
-            photo=service.get_payment_photo_id(),
+            file_id=service.get_payment_photo_id(),
             caption=text,
             reply_markup=payment_control_keyboard(service)
         )
@@ -626,7 +676,19 @@ async def callback_button_payment_control(
 
 
 #  ---------------------------------------------------------- ВЫПОЛНЕНИЕ УСЛУГИ
-async def check_readiness_and_do_next_step(service: Service):
+async def find_product_service(service_id: int):
+    """Возвращает полноценный продуктовый сервис
+    """
+    log.info('find_product_service')
+    if BankCardService.does_service_exist(service_id):
+        service = BankCardService.get(service_id)
+    elif DriveLicenseService.does_service_exist(service_id):
+        service = DriveLicenseService.get(service_id)
+
+    return service
+
+
+async def check_readiness_and_do_next_step(service: Service) -> bool:
     """Отправляет сервис на проверку готовности:
         Оплата, готовность документов
     Если все готов:
@@ -634,55 +696,63 @@ async def check_readiness_and_do_next_step(service: Service):
     """
     log.info('check_readiness_bank_card_service')
 
-    if BankCardService.does_service_exist(service.get_service_id()):
-        service = BankCardService(service.get_service_id())
-        if not service.is_service_ready():
-            log.info('BankCardService is not ready')
-            return
-        log.info('BankCardService is ready')
-        await send_service_to_bank_operator(service)
-    elif DriveLicenseService.does_service_exist(service.get_service_id()):
-        service = BankCardService(service.get_service_id())
-        if not service.is_service_ready():
-            print('drive')
-            return
+    service = await find_product_service(service.get_service_id())
+    if not service.is_service_ready():
+        log.info('Service is not ready')
+        return False
+
+    log.info('Service is ready')
+    await bot.send_message(
+        chat_id=service.get_tg_user().get_tg_id(),
+        text=documents_is_ready_text
+    )
+    await send_service_to_operator(service)
+    return True
 
 
 take_customer = 'Взять клиента'
 refuse_customer = 'Отказаться'
-bank_card_operator_buttons = (take_customer, refuse_customer)
+operator_buttons = (take_customer, refuse_customer)
 
 
-def bank_card_operator_keyboard(service: Service):
+def take_customer_operator_keyboard(service: Service, section: Section):
+    """Клавиатура для взятия клиентов"""
     keyboard = make_inline_keyboard(
-        question=Section.BANK_CARD.name,
-        answers=bank_card_operator_buttons,
+        question=section.name,
+        answers=operator_buttons,
         data=service.get_service_id()
     )
     return keyboard
 
 
-async def send_service_to_bank_operator(service: Service):
+async def send_service_to_operator(service: Service):
     """Отправляет исполнителю-оператору"""
     log.info('send_service_to_bank_operator')
-    bank_operators = Operator.get_operator_list(Section.BANK_CARD)
-    for operator in bank_operators:
+    product = service.__class__.product
+    operator_section = product.operator_section
+    operators = Operator.get_operator_list(operator_section)
+    for operator in operators:
         await bot.send_message(
             chat_id=operator.get_tg_id(),
-            text=get_text_for_bank_card_operator(
-                from_customer=service.get_customer_name(),
-                operator=service.get_executor_name()
+            text=get_text_for_new_service(
+                product_name=product.product_name,
+                customer_name=service.get_customer_name(),
+                operator_name=service.get_executor_name(),
+                place_name=service.get_place_address(),
+                date_time=service.get_time_str()
             ),
-            reply_markup=bank_card_operator_keyboard(service)
+            reply_markup=take_customer_operator_keyboard(
+                service=service,
+                section=operator_section
+            )
         )
 
 
 @dp.callback_query_handler(
     button_cb.filter(
-        question=Section.BANK_CARD.name,
-        answer=bank_card_operator_buttons),
+        answer=operator_buttons),
     state='*')
-async def callback_bank_card_operator(
+async def callback_operator_taking_service(
         query: CallbackQuery,
         callback_data: typing.Dict[str, str],
         state: FSMContext):
@@ -694,24 +764,32 @@ async def callback_bank_card_operator(
         return
 
     service_id = callback_data['data']
-    service = BankCardService(service_id)
+    service = await find_product_service(service_id)
+    product = service.__class__.product
     if callback_data['answer'] == take_customer:
         operator = Operator.get_operator(query.from_user.id, Section.BANK_CARD)
         service.change_executor(operator)
-        await send_documents_for_bank_operator(service)
-        await send_meeting_message(service)
+        await send_documents_to_operator(service)
+        if product is bank_card_product:
+            await send_bankcard_meeting_message(service)
+        elif product is driver_license_product:
+            await send_drivelic_meeting_message(service)
+
     elif callback_data['answer'] == refuse_customer:
         pass
 
     await query.message.edit_text(
-        text=get_text_for_bank_card_operator(
-            from_customer=service.get_customer_name(),
-            operator=service.get_executor_name()
+        text=get_text_for_new_service(
+            product_name=product.product_name,
+            customer_name=service.get_customer_name(),
+            operator_name=service.get_executor_name(),
+            place_name=service.get_place_address(),
+            date_time=service.get_time_str()
         )
     )
 
 
-async def send_documents_for_bank_operator(service: Service):
+async def send_documents_to_operator(service: Service):
     """Отправляет документы исполнителю-оператору"""
     log.info('send_service_to_bank_operator')
     product = service.__class__.product
@@ -724,12 +802,35 @@ async def send_documents_for_bank_operator(service: Service):
             form_dict=service.get_form()
         )
     )
-    await bot.send_photo(
+    await send_document(
         chat_id=operator.get_tg_id(),
-        photo=service.get_passport(),
+        file_id=service.get_passport(),
         caption=product.list_of_documents[1].document_name
     )
+    if product is driver_license_product:
+        await send_document(
+            chat_id=operator.get_tg_id(),
+            file_id=service.get_evisa(),
+            caption=product.list_of_documents[2].document_name
+        )
 
+
+chosing_date_bankcard_question = 'bankcard_date'
+chosing_date_drivelic_question = 'drivelic_date'
+
+
+def operator_days_keyboard(service: Service, question: str):
+    today = datetime.now(tz=timezone(CLIENT_TIMEZONE_NAME)).date()
+    days = [str(today + timedelta(days=i)) for i in range(1, 4)]
+    keyboard = make_inline_keyboard(
+        question=question,
+        answers=days,
+        data=service.get_service_id()
+    )
+    return keyboard
+
+
+#  ------------------------------------------------- ВЫПОЛНЕНИЕ УСЛУГИ BANKCARD
 bank_place_name_buttons = [
     place.name for place in bank_card_product.list_of_places]
 
@@ -743,11 +844,11 @@ def bank_places_keyboard(service: Service):
     return keyboard
 
 
-async def send_meeting_message(service: Service):
+async def send_bankcard_meeting_message(service: Service):
     """Отправляет исполнителю-оператору сообщение
     для назначения времени/места встречи
     """
-    log.info('send_meeting_message')
+    log.info('send_bankcard_meeting_message')
     operator = service.get_executor()
     product = service.__class__.product
 
@@ -786,9 +887,8 @@ async def callback_meeting_message(
     service = BankCardService(service_id)
     product = service.__class__.product
     place_name = callback_data['answer']
-    place = product.get_place_by_name(place_name)
+    place = product.find_place(place_name=place_name)
     service.set_place(place)
-
     await query.message.edit_text(
         text=(
             get_meeting_text(
@@ -799,27 +899,15 @@ async def callback_meeting_message(
                 data_time='--- | 7:40')
             + chose_meeting_time
         ),
-        reply_markup=bank_days_keyboard(service)
+        reply_markup=operator_days_keyboard(
+            service=service,
+            question=chosing_date_bankcard_question)
     )
-
-
-bank_days_name_question = 'bank_days'
-
-
-def bank_days_keyboard(service: Service):
-    today = datetime.now(tz=timezone(CLIENT_TIMEZONE_NAME)).date()
-    days = [str(today + timedelta(days=i)) for i in range(1, 4)]
-    keyboard = make_inline_keyboard(
-        question=bank_days_name_question,
-        answers=days,
-        data=service.get_service_id()
-    )
-    return keyboard
 
 
 @dp.callback_query_handler(
     button_cb.filter(
-        question=bank_days_name_question),
+        question=chosing_date_bankcard_question),
     state='*')
 async def callback_time_meeting_message(
         query: CallbackQuery,
@@ -860,6 +948,77 @@ async def callback_time_meeting_message(
     await send_meeting_notification(service)
 
 
+#  ------------------------------------------------ ВЫПОЛНЕНИЕ УСЛУГИ DRIVERLIC
+async def send_drivelic_meeting_message(service: Service):
+    """Отправляет исполнителю-оператору сообщение
+    для назначения даты встречи
+    """
+    log.info('send_bankcard_meeting_message')
+    operator = service.get_executor()
+    product = service.__class__.product
+    place = product.find_place(place_address=service.get_place_address())
+
+    await bot.send_message(
+        chat_id=operator.get_tg_id(),
+        text=(
+            get_meeting_text(
+                product_name=product.product_name,
+                customer_name=service.get_customer_name(),
+                operator_name=service.get_executor_name(),
+                place_name=place.address,
+                data_time=service.get_time().strftime('--- | %H:%M'),
+                place_link=place.google_map_link)
+            + chose_meeting_date
+        ),
+        reply_markup=operator_days_keyboard(
+            service=service,
+            question=chosing_date_drivelic_question)
+    )
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=chosing_date_drivelic_question),
+    state='*')
+async def callback_date_meeting_for_drivelic_message(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+    if not Operator.is_user_operator(
+            tg_id=query.from_user.id,
+            section=Section.DRIVER_LICENSE):
+        log.warning('user is not driver_lic_operator')
+        return
+
+    service_id = callback_data['data']
+    service = await find_product_service(service_id)
+    product = service.__class__.product
+
+    day_str = callback_data['answer']
+    meeting_day = datetime(
+        year=int(day_str[0:4]),
+        month=int(day_str[5:7]),
+        day=int(day_str[8:10]),
+        hour=service.get_time().hour,
+        minute=service.get_time().minute
+    )
+    meeting_day = timezone(CLIENT_TIMEZONE_NAME).localize(meeting_day)
+    service.set_time(meeting_day)
+
+    await query.message.edit_text(
+        text=get_meeting_text(
+            product_name=product.product_name,
+            customer_name=service.get_customer_name(),
+            operator_name=service.get_executor_name(),
+            place_name=service.get_place_address(),
+            data_time=service.get_time().strftime('%Y-%m-%d | %H:%M')
+        )
+    )
+    await add_meeting_notification(service)
+    await send_meeting_notification(service)
+
+
 #  ----------------------------------------------------- ДЕЙСТВИЯ ПО РАСПИСАНИЮ
 async def add_meeting_notification(service: Service):
     """Настраивает отложенное напоминание"""
@@ -883,7 +1042,6 @@ async def send_meeting_notification(service: Service):
     """Отправляет клиенту напоминание о встрече"""
     log.info('notification')
     product = service.__class__.product
-    product = Product()
     place = product.find_place(place_address=service.get_place_address())
     await bot.send_message(
         chat_id=service.get_tg_user().get_tg_id(),
@@ -896,6 +1054,285 @@ async def send_meeting_notification(service: Service):
             data_time=service.get_time().strftime('%Y-%m-%d | %H:%M')
         )
     )
+
+
+#  ----------------------------------------------- ОФОРМЛЕНИЕ ВОДИТЕЛЬСКИХ ПРАВ
+class DriverLicenseState(StatesGroup):
+    waiting_form = State()
+    waiting_pasport = State()
+    waiting_evisa = State()
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=driver_license_product.uniq_key,
+        answer=driver_license_product.get_document_names()),
+    state='*')
+async def callback_button_driver_license(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+
+    service_id = callback_data['data']
+    service = await find_product_service(service_id)
+    await state.update_data(service=service)
+
+    if callback_data['answer'] == 'Анкета':
+        await start_form_filling_for_driver_lic(query.message, state)
+    elif callback_data['answer'] == 'Фото паспорта':
+        await start_pasport_getting_for_driver_lic(query.message, state)
+    elif callback_data['answer'] == 'Электронная виза':
+        await start_evisa_getting_for_driver_lic(query.message, state)
+    elif callback_data['answer'] == 'Место встречи':
+        await start_chosing_meeting(query.message, state)
+    await query.answer()  # stop circle on button
+
+    product = service.__class__.product
+    await query.message.edit_text(
+        text=product.preparation_description
+    )
+
+
+async def start_pasport_getting_for_driver_lic(
+        message: Message, state: FSMContext):
+    log.info('start_pasport_getting from: %r', message.from_user.id)
+    await DriverLicenseState.waiting_pasport.set()
+    await message.answer(
+        text=waiting_pasport_text
+    )
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    content_types=[ContentType.PHOTO, ContentType.DOCUMENT],
+    state=DriverLicenseState.waiting_pasport)
+async def pasport_getting_for_driver_lic(message: Message, state: FSMContext):
+    log.info('pasport_getting_for_driver_lic from: %r', message.from_user.id)
+
+    state_data = await state.get_data()
+    service = state_data['service']
+    file_id = await get_file_id_from_message(message)
+    service.new_pasport(pasport=file_id)
+    service.passport_complete()
+    await message.reply(
+        text=pasport_getting_text
+    )
+    if not await check_readiness_and_do_next_step(service):
+        await send_actions_for_service(service)
+
+
+async def start_evisa_getting_for_driver_lic(
+        message: Message, state: FSMContext):
+    log.info(f'start_evisa_getting from: {message.from_user.id}')
+    await DriverLicenseState.waiting_evisa.set()
+    await message.answer(
+        text=waiting_evisa_text
+    )
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    content_types=[ContentType.PHOTO, ContentType.DOCUMENT],
+    state=DriverLicenseState.waiting_evisa)
+async def evisa_getting_for_driver_lic(message: Message, state: FSMContext):
+    log.info('pasport_getting_for_driver_lic from: %r', message.from_user.id)
+
+    state_data = await state.get_data()
+    service = state_data['service']
+    file_id = await get_file_id_from_message(message)
+    service.new_evisa(file_id)
+    service.evisa_complete()
+    await message.reply(
+        text=evisa_getting_text
+    )
+    if not await check_readiness_and_do_next_step(service):
+        await send_actions_for_service(service)
+
+
+async def start_form_filling_for_driver_lic(
+        message: Message, state: FSMContext):
+    log.info('start_form_filling_for_bank from: %r', message.from_user.id)
+    await message.answer(
+        text=start_form_filling_text
+    )
+
+    await DriverLicenseState.waiting_form.set()
+    field_enum = DriverLicenseForm.blood_type
+    field = field_enum.value
+    await state.update_data(field_enum=field_enum)
+    await message.answer(
+        text=get_text_for_form_field(
+            field_name=field.name_for_human,
+            field_type_discription=field.field_type.value
+        )
+    )
+
+
+@dp.message_handler(
+    lambda message: is_message_private(message),
+    content_types=[ContentType.TEXT],
+    state=DriverLicenseState.waiting_form)
+async def driver_lic_form_filling(message: Message, state: FSMContext):
+    log.info('form_filling from: %r', message.from_user.id)
+
+    state_data = await state.get_data()
+    field_enum = state_data['field_enum']
+    service = state_data['service']
+
+    field = field_enum.value
+    print(f'{field.name_in_db}: {message.text}')
+
+    if field.field_type == FieldType.YES_NO:
+        if message.text not in yes_no_buttons:
+            message.reply(text=answer_shoud_be_bool)
+            return
+        value = bool_dict_for_yes_no[message.text]
+    else:
+        value = message.text
+
+    service.put_data_to_field(
+        name_field_in_db=field.name_in_db,
+        value=value
+    )
+
+    if field_enum == DriverLicenseForm.international:
+        await message.answer(text=form_is_end_text)
+        await state.reset_state(with_data=False)
+        service.form_complete()
+        if not await check_readiness_and_do_next_step(service):
+            await send_actions_for_service(service)
+        return
+
+    field_enum = get_next_enum(field_enum)
+    field = field_enum.value
+    await state.update_data(field_enum=field_enum)
+    if field.field_type == FieldType.YES_NO:
+        keybord = make_replay_keyboard(yes_no_buttons)
+    else:
+        keybord = None
+    await message.answer(
+        text=get_text_for_form_field(
+            field_name=field.name_for_human,
+            field_type_discription=field.field_type.value
+        ),
+        reply_markup=keybord
+    )
+
+
+police_place_name_buttons = [
+    place.name for place in driver_license_product.list_of_places]
+
+
+async def start_chosing_meeting(
+        message: Message, state: FSMContext):
+    log.info('start_chosing_meeting from: %r', message.from_user.id)
+    state_data = await state.get_data()
+    service = state_data['service']
+    product = service.__class__.product
+
+    keyboard = make_inline_keyboard(
+        question=Section.DRIVER_LICENSE.name,
+        answers=police_place_name_buttons,
+        data=service.get_service_id()
+    )
+
+    await bot.send_message(
+        chat_id=service.get_tg_user().get_tg_id(),
+        text=(
+            get_meeting_text(
+                product_name=product.product_name,
+                customer_name=service.get_customer_name(),
+                operator_name='---',
+                place_name='---',
+                data_time='--- | ---')
+            + chose_meeting_place
+        ),
+        reply_markup=keyboard
+    )
+
+
+time_name_buttons = ('09.00', '12.00')
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=Section.DRIVER_LICENSE.name,
+        answer=police_place_name_buttons),
+    state='*')
+async def callback_meeting_place_message(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+
+    service_id = callback_data['data']
+    service = DriveLicenseService.get(service_id)
+    product = service.__class__.product
+    place_name = callback_data['answer']
+    place = product.find_place(place_name=place_name)
+    service.set_place(place)
+
+    keyboard = make_inline_keyboard(
+        question=Section.DRIVER_LICENSE.name,
+        answers=time_name_buttons,
+        data=service.get_service_id()
+    )
+
+    await query.message.edit_text(
+        text=(
+            get_meeting_text(
+                product_name=product.product_name,
+                customer_name=service.get_customer_name(),
+                operator_name=service.get_executor_name(),
+                place_name=place.address,
+                data_time='--- | ---',
+                place_link=place.google_map_link)
+            + chose_meeting_time
+        ),
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query_handler(
+    button_cb.filter(
+        question=Section.DRIVER_LICENSE.name,
+        answer=time_name_buttons),
+    state='*')
+async def callback_time_meeting_message_for_driver(
+        query: CallbackQuery,
+        callback_data: typing.Dict[str, str],
+        state: FSMContext):
+    log.info('Got this callback data: %r', callback_data)
+
+    service_id = callback_data['data']
+    service = DriveLicenseService.get(service_id)
+    product = service.__class__.product
+
+    time_str = callback_data['answer']
+    meeting_day = datetime(
+        year=2020,
+        month=1,
+        day=1,
+        hour=int(time_str[0:2]),
+        minute=int(time_str[3:5])
+    )
+    meeting_day = timezone(CLIENT_TIMEZONE_NAME).localize(meeting_day)
+    service.set_time(meeting_day)
+
+    place = product.find_place(place_address=service.get_place_address())
+    await query.message.edit_text(
+        text=get_meeting_text(
+            product_name=product.product_name,
+            customer_name=service.get_customer_name(),
+            operator_name=service.get_executor_name(),
+            place_name=place.address,
+            data_time=service.get_time().strftime('--- | %H:%M'),
+            place_link=place.google_map_link
+        ) + meeting_date_chosing_operator
+    )
+    if not await check_readiness_and_do_next_step(service):
+        await send_actions_for_service(service)
 
 
 #  ---------------------------------------------------------- ОБРАБОТКА ДРУГОГО
