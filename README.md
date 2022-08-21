@@ -1,9 +1,9 @@
-# paperwork_bot
+# Paperwork Bot
 
-Проект чат-бота для оказания услуг по оформлению документов. Бот автоматизирует прием заявок на оформления документов.
+This bot automates application for paperwork services
 
-Функционал:
-* информирует клиентов о доступных услугах
-* собирает информацию от клиента, заполняет необходимые формы
-* информирует операторов, что клиент готов к оказанию услуги
-* дает операторам возможность назначать время и мето для встречи с клиентом из доступных адресов и таймслотов 
+Functionality:
+* informs clients about available services
+* collects client information & fills in necessary forms
+* informs operators when the client is ready for the service
+* allows operators to assign time & place to meet the client out of available addresses & time slots
